@@ -74,7 +74,7 @@ def model_fit(model_name, train_x, train_y):
     if model_name in param_grids:
         regressor = eval(model_name)(max_iter=1000)
         param_grid = param_grids[model_name]
-        regressor = GridSearchCV(regressor, param_grid, cv=5, scoring='r2', n_jobs=5)
+        regressor = GridSearchCV(regressor, param_grid, cv=5, scoring='r2', n_jobs=3)
     else:
         regressor = eval(model_name)(max_iter=1000)
 
