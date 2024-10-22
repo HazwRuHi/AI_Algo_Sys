@@ -101,7 +101,7 @@ def main():
     train_data = pd.read_csv(TRAIN_DATA_PATH)
 
     # Initialize KFold cross-validation
-    kf = KFold(n_splits=5, shuffle=True, random_state=42)
+    kf = KFold(n_splits=10, shuffle=True, random_state=42)
 
     best_model = None
     best_r2 = -np.inf
@@ -110,7 +110,7 @@ def main():
     best_model_name = None
 
     # List of models to evaluate
-    model_list = ["MLPRegressor", "RandomForestRegressor", "AdaBoostRegressor", "DecisionTreeRegressor", "Ridge", "SVR"]
+    model_list = ["RandomForestRegressor", "AdaBoostRegressor", "DecisionTreeRegressor", "Ridge", "SVR"]
 
     # Iterate over each model
     for model_name in model_list:
