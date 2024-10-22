@@ -1,8 +1,8 @@
 import pandas as pd
 import numpy as np
 from sklearn.impute import SimpleImputer
-from sklearn.preprocessing import MinMaxScaler
-from sklearn.ensemble import RandomForestRegressor, AdaBoostRegressor
+from sklearn.preprocessing import MinMaxScaler, RobustScaler
+from sklearn.ensemble import RandomForestRegressor, AdaBoostRegressor, IsolationForest
 from sklearn.tree import DecisionTreeRegressor
 from sklearn.linear_model import Ridge
 from sklearn.neural_network import MLPRegressor
@@ -27,7 +27,7 @@ COLUMN_NAMES = [
 ]
 
 
-def preprocess_data(data, imputer=None, scaler=None):
+def preprocess_data(data, label=None, imputer=None, scaler=None):
     # Drop non-numeric columns
     data = data.drop(["Country", "Status"], axis=1)
 
@@ -39,14 +39,23 @@ def preprocess_data(data, imputer=None, scaler=None):
 
     # Scale data if scaler is not provided
     if scaler is None:
-        scaler = MinMaxScaler()
+        scaler = RobustScaler()
         scaler = scaler.fit(data)
     data_norm = pd.DataFrame(scaler.transform(data), columns=data.columns)
 
-    # Drop the 'Year' column
-    data_norm = data_norm.drop(['Year'], axis=1)
+    # Detect and remove outliers if outlier_detector is not provided
 
-    return data_norm, imputer, scaler
+    if label is not None:
+        outlier_detector = IsolationForest(contamination=0.1, random_state=42)
+        outlier_detector.fit(data_norm)
+        outliers = outlier_detector.predict(data_norm)
+        data_norm = data_norm[outliers == 1]
+        label = label[outliers == 1]
+        data_norm = data_norm.drop(['Year'], axis=1)
+        return data_norm, label, imputer, scaler
+    else:
+        data_norm = data_norm.drop(['Year'], axis=1)
+        return data_norm, imputer, scaler
 
 
 def model_fit(model_name, train_x, train_y):
@@ -54,7 +63,8 @@ def model_fit(model_name, train_x, train_y):
     param_grids = {
         'MLPRegressor': {
             'hidden_layer_sizes': [(100, 100), (200, 200)],
-            'activation': ['relu', 'tanh'],
+            'activation': ['relu'],
+            'max_iter': [1000],
             'solver': ['adam'],
         },
         'RandomForestRegressor': {
@@ -72,11 +82,11 @@ def model_fit(model_name, train_x, train_y):
 
     # Initialize the regressor based on the model name
     if model_name in param_grids:
-        regressor = eval(model_name)(max_iter=1000)
+        regressor = eval(model_name)()
         param_grid = param_grids[model_name]
-        regressor = GridSearchCV(regressor, param_grid, cv=5, scoring='r2', n_jobs=3)
+        regressor = GridSearchCV(regressor, param_grid, cv=5, scoring='r2', n_jobs=5)
     else:
-        regressor = eval(model_name)(max_iter=1000)
+        regressor = eval(model_name)()
 
     # Fit the model
     regressor.fit(train_x, train_y)
@@ -85,7 +95,7 @@ def model_fit(model_name, train_x, train_y):
 
 def predict(model, test_data, imputer, scaler):
     # Preprocess the test data
-    test_data_norm, _, _ = preprocess_data(test_data, imputer, scaler)
+    test_data_norm, _, _ = preprocess_data(test_data, label=None, imputer=imputer, scaler=scaler)
     test_x = test_data_norm.values
 
     # Make predictions
@@ -121,7 +131,7 @@ def main():
             train_fold = train_fold.drop(["Adult Mortality"], axis=1)
 
             # Preprocess training data
-            train_fold_norm, imputer, scaler = preprocess_data(train_fold)
+            train_fold_norm, train_y, imputer, scaler = preprocess_data(train_fold, label=train_y, imputer=None, scaler=None)
             train_x = train_fold_norm.values
 
             # Fit the model
@@ -130,6 +140,7 @@ def main():
             # Separate target variable for testing data
             test_y = test_fold['Adult Mortality'].values
             test_fold = test_fold.drop(["Adult Mortality"], axis=1)
+            test_fold_norm, _, _ = preprocess_data(test_fold, label=None, imputer=imputer, scaler=scaler)
 
             # Make predictions
             y_pred = predict(model, test_fold, imputer, scaler)
