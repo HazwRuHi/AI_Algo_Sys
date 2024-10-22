@@ -64,10 +64,10 @@ def model_fit(model_name, train_x, train_y):
             'solver': ['adam'],
         },
         'RandomForestRegressor': {
-            'n_estimators': [100, 200, 300],
+            'n_estimators': [100, 200, 300, None],
             'max_depth': [5, 10, 20, 40, None],
-            'min_samples_split': [2, 5],
-            'min_samples_leaf': [1, 2, 3]
+            'min_samples_split': [2, 5, None],
+            'min_samples_leaf': [1, 2, 3, None]
         },
         'AdaBoostRegressor': {
             'n_estimators': [50, 100],
@@ -79,7 +79,7 @@ def model_fit(model_name, train_x, train_y):
     if model_name in param_grids:
         regressor = eval(model_name)()
         param_grid = param_grids[model_name]
-        regressor = GridSearchCV(regressor, param_grid, cv=5, scoring='r2', n_jobs=10)
+        regressor = GridSearchCV(regressor, param_grid, cv=5, scoring='r2', n_jobs=20)
     else:
         regressor = eval(model_name)()
 
