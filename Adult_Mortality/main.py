@@ -26,8 +26,7 @@ COLUMN_NAMES = [
     'Schooling', 'Adult Mortality'
 ]
 
-
-def preprocess_data(data, label=None, imputer=None, scaler=None):
+def preprocess_data(data, imputer=None, scaler=None):
     # Drop non-numeric columns
     data = data.drop(["Country", "Status"], axis=1)
 
@@ -43,26 +42,23 @@ def preprocess_data(data, label=None, imputer=None, scaler=None):
         scaler = scaler.fit(data)
     data_norm = pd.DataFrame(scaler.transform(data), columns=data.columns)
 
-    # Detect and remove outliers if outlier_detector is not provided
+    data_norm = data_norm.drop(['Year'], axis=1)
+    return data_norm, imputer, scaler
 
-    if label is not None:
-        outlier_detector = IsolationForest(contamination=0.1, random_state=42)
-        outlier_detector.fit(data_norm)
-        outliers = outlier_detector.predict(data_norm)
-        data_norm = data_norm[outliers == 1]
-        label = label[outliers == 1]
-        data_norm = data_norm.drop(['Year'], axis=1)
-        return data_norm, label, imputer, scaler
-    else:
-        data_norm = data_norm.drop(['Year'], axis=1)
-        return data_norm, imputer, scaler
-
+def detect_and_remove_outliers(data, label):
+    outlier_detector = IsolationForest(contamination=0.1, random_state=42)
+    outlier_detector.fit(data)
+    outliers = outlier_detector.predict(data)
+    removed_indices = np.where(outliers == 1)[0]
+    data = data[outliers == 1]
+    label = label[outliers == 1]
+    return data, label, removed_indices
 
 def model_fit(model_name, train_x, train_y):
     # Define parameter grids for each model
     param_grids = {
         'MLPRegressor': {
-            'hidden_layer_sizes': [(100, 100), (200, 200)],
+            'hidden_layer_sizes': [(100, 100)],
             'activation': ['relu'],
             'max_iter': [1000],
             'solver': ['adam'],
@@ -77,7 +73,6 @@ def model_fit(model_name, train_x, train_y):
             'n_estimators': [50, 100],
             'learning_rate': [0.01, 0.1, 1]
         }
-
     }
 
     # Initialize the regressor based on the model name
@@ -92,16 +87,14 @@ def model_fit(model_name, train_x, train_y):
     regressor.fit(train_x, train_y)
     return regressor
 
-
 def predict(model, test_data, imputer, scaler):
     # Preprocess the test data
-    test_data_norm, _, _ = preprocess_data(test_data, label=None, imputer=imputer, scaler=scaler)
+    test_data_norm, _, _ = preprocess_data(test_data, imputer=imputer, scaler=scaler)
     test_x = test_data_norm.values
 
     # Make predictions
     predictions = model.predict(test_x)
     return predictions
-
 
 def main():
     # Load training data
@@ -131,7 +124,8 @@ def main():
             train_fold = train_fold.drop(["Adult Mortality"], axis=1)
 
             # Preprocess training data
-            train_fold_norm, train_y, imputer, scaler = preprocess_data(train_fold, label=train_y, imputer=None, scaler=None)
+            train_fold_norm, imputer, scaler = preprocess_data(train_fold, imputer=None, scaler=None)
+            train_fold_norm, train_y, rm_idx = detect_and_remove_outliers(train_fold_norm, train_y)
             train_x = train_fold_norm.values
 
             # Fit the model
@@ -140,10 +134,10 @@ def main():
             # Separate target variable for testing data
             test_y = test_fold['Adult Mortality'].values
             test_fold = test_fold.drop(["Adult Mortality"], axis=1)
-            test_fold_norm, _, _ = preprocess_data(test_fold, label=None, imputer=imputer, scaler=scaler)
-
+            test_fold_norm, _, _ = preprocess_data(test_fold, imputer=imputer, scaler=scaler)
+            test_fold_norm, test_y, rm_idx = detect_and_remove_outliers(test_fold_norm, test_y)
             # Make predictions
-            y_pred = predict(model, test_fold, imputer, scaler)
+            y_pred = predict(model, test_fold, imputer, scaler)[rm_idx]
 
             # Calculate R2 score for testing data
             r2 = r2_score(test_y, y_pred)
@@ -167,7 +161,6 @@ def main():
     joblib.dump(best_imputer, IMPUTER_FILENAME)
     joblib.dump(best_scaler, SCALER_FILENAME)
     print(f'Best model: {best_model_name}, R2: {best_r2}')
-
 
 if __name__ == "__main__":
     main()
