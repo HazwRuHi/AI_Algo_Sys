@@ -53,8 +53,9 @@ def model_fit(model_name, train_x, train_y):
     # Define parameter grids for each model
     param_grids = {
         'MLPRegressor': {
-            'hidden_layer_sizes': [(50, 50), (100, 100)],
-            'max_iter': [500, 1000]
+            'hidden_layer_sizes': [(100, 100), (200, 200)],
+            'activation': ['relu', 'tanh'],
+            'solver': ['adam'],
         },
         'RandomForestRegressor': {
             'n_estimators': [100, 200],
@@ -65,19 +66,8 @@ def model_fit(model_name, train_x, train_y):
         'AdaBoostRegressor': {
             'n_estimators': [50, 100],
             'learning_rate': [0.01, 0.1, 1]
-        },
-        'DecisionTreeRegressor': {
-            'max_depth': [None, 10, 20],
-            'min_samples_split': [2, 5],
-            'min_samples_leaf': [1, 2]
-        },
-        'Ridge': {
-            'alpha': [0.1, 1.0, 10.0]
-        },
-        'SVR': {
-            'C': [0.1, 1, 10],
-            'kernel': ['linear', 'rbf']
         }
+
     }
 
     # Initialize the regressor based on the model name
