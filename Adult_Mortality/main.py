@@ -64,10 +64,10 @@ def model_fit(model_name, train_x, train_y):
             'solver': ['adam'],
         },
         'RandomForestRegressor': {
-            'n_estimators': [100, 200],
-            'max_depth': [10, 20, None],
+            'n_estimators': [100, 200, 300],
+            'max_depth': [5, 10, 20, 40, None],
             'min_samples_split': [2, 5],
-            'min_samples_leaf': [1, 2]
+            'min_samples_leaf': [1, 2, 3]
         },
         'AdaBoostRegressor': {
             'n_estimators': [50, 100],
@@ -79,7 +79,7 @@ def model_fit(model_name, train_x, train_y):
     if model_name in param_grids:
         regressor = eval(model_name)()
         param_grid = param_grids[model_name]
-        regressor = GridSearchCV(regressor, param_grid, cv=5, scoring='r2', n_jobs=5)
+        regressor = GridSearchCV(regressor, param_grid, cv=5, scoring='r2', n_jobs=10)
     else:
         regressor = eval(model_name)()
 
@@ -125,7 +125,7 @@ def main():
 
             # Preprocess training data
             train_fold_norm, imputer, scaler = preprocess_data(train_fold, imputer=None, scaler=None)
-            train_fold_norm, train_y, rm_idx = detect_and_remove_outliers(train_fold_norm, train_y)
+            # train_fold_norm, train_y, rm_idx = detect_and_remove_outliers(train_fold_norm, train_y)
             train_x = train_fold_norm.values
 
             # Fit the model
@@ -135,9 +135,10 @@ def main():
             test_y = test_fold['Adult Mortality'].values
             test_fold = test_fold.drop(["Adult Mortality"], axis=1)
             test_fold_norm, _, _ = preprocess_data(test_fold, imputer=imputer, scaler=scaler)
-            test_fold_norm, test_y, rm_idx = detect_and_remove_outliers(test_fold_norm, test_y)
+            # test_fold_norm, test_y, rm_idx = detect_and_remove_outliers(test_fold_norm, test_y)
             # Make predictions
-            y_pred = predict(model, test_fold, imputer, scaler)[rm_idx]
+            y_pred = predict(model, test_fold, imputer, scaler)
+            # y_pred = y_pred[rm_idx]
 
             # Calculate R2 score for testing data
             r2 = r2_score(test_y, y_pred)
