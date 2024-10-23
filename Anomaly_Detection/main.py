@@ -59,7 +59,7 @@ print(data.y.shape)  # label
 
 # 定义多层感知机（MLP）模型
 class MLP(torch.nn.Module):
-    def __init__(self, in_channels, hidden_channels, out_channels, num_layers, dropout, batchnorm=True):
+    def __init__(self, in_channels, hidden_channels, out_channels, num_layers, dropout, batchnorm=False):
         super(MLP, self).__init__()
         self.lins = torch.nn.ModuleList()
         self.lins.append(torch.nn.Linear(in_channels, hidden_channels))
@@ -133,7 +133,7 @@ epochs = 200
 log_steps = 10
 
 # 初始化模型
-model = GIN(in_channels=data.x.size(-1), hidden_channels=128, out_channels=nlabels, n_layers=2, dropout=0.5).to(device)
+model = GIN(in_channels=data.x.size(-1), hidden_channels=64, out_channels=nlabels, n_layers=2, dropout=0.5).to(device)
 print(f'Model GIN initialized')
 
 # 评估指标
