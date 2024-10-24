@@ -4,17 +4,19 @@ import torch.nn.functional as F
 import torch.nn as nn
 import torch_geometric.transforms as T
 from torch_geometric.data import Data
-from torch_geometric.nn import GINConv
+from torch_geometric.nn import GINConv, GATConv, GCNConv
 import numpy as np
 from utils import DGraphFin
 from utils.utils import prepare_folder
 from utils.evaluator import Evaluator
 import argparse
 
+
 def parse_args():
     parser = argparse.ArgumentParser(description='Anomaly Detection with GIN')
     parser.add_argument('--device', type=str, default='cuda:0', help='Device to use for computation (e.g., "cuda:0" or "cpu")')
     return parser.parse_args()
+
 
 class MLP(torch.nn.Module):
     def __init__(self, in_channels, hidden_channels, out_channels, num_layers, dropout, batchnorm=False):
@@ -49,6 +51,7 @@ class MLP(torch.nn.Module):
         x = self.lins[-1](x)
         return F.log_softmax(x, dim=-1)
 
+
 class GIN(nn.Module):
     def __init__(self, in_channels, hidden_channels, out_channels, n_layers=3, mlp_layers=1, dropout=0.5, train_eps=True):
         super(GIN, self).__init__()
@@ -76,14 +79,77 @@ class GIN(nn.Module):
         x = self.convs[-1](x, adj)
         return x
 
+
+class GAT(nn.Module):
+    def __init__(self, in_channels, hidden_channels, out_channels, n_layers=3, n_heads=1, dropout=0.5):
+        super(GAT, self).__init__()
+        self.in_channels = in_channels
+        self.hidden_channels = hidden_channels
+        self.out_channels = out_channels
+        self.n_layers = n_layers
+        self.n_heads = n_heads
+        self.dropout = dropout
+
+        self.convs = nn.ModuleList()
+        self.convs.append(GATConv(in_channels, hidden_channels, heads=n_heads, dropout=dropout))
+        for _ in range(n_layers - 2):
+            self.convs.append(GATConv(hidden_channels * n_heads, hidden_channels, heads=n_heads, dropout=dropout))
+        self.convs.append(GATConv(hidden_channels * n_heads, out_channels, heads=n_heads, dropout=dropout, concat=False))
+
+    def forward(self, x, edge_index):
+        for conv in self.convs[:-1]:
+            x = conv(x, edge_index)
+            x = F.elu(x)
+            x = F.dropout(x, p=self.dropout, training=self.training)
+        x = self.convs[-1](x, edge_index)
+        return x
+
+
+class GCN(nn.Module):
+    def __init__(self, in_channels, hidden_channels, out_channels, n_layers=3, dropout=0.5, batchnorm=False):
+        super(GCN, self).__init__()
+        self.in_channels = in_channels
+        self.hidden_channels = hidden_channels
+        self.out_channels = out_channels
+        self.n_layers = n_layers
+        self.dropout = dropout
+        self.batchnorm = batchnorm
+
+        self.convs = nn.ModuleList()
+        self.bns = nn.ModuleList() if batchnorm else None
+
+        if n_layers == 1:
+            self.convs.append(GCNConv(in_channels, out_channels))
+        else:
+            self.convs.append(GCNConv(in_channels, hidden_channels))
+            if batchnorm:
+                self.bns.append(nn.BatchNorm1d(hidden_channels))
+            for _ in range(n_layers - 2):
+                self.convs.append(GCNConv(hidden_channels, hidden_channels))
+                if batchnorm:
+                    self.bns.append(nn.BatchNorm1d(hidden_channels))
+            self.convs.append(GCNConv(hidden_channels, out_channels))
+
+    def forward(self, x, edge_index):
+        for i, conv in enumerate(self.convs[:-1]):
+            x = conv(x, edge_index)
+            if self.batchnorm:
+                x = self.bns[i](x)
+            x = F.relu(x)
+            x = F.dropout(x, p=self.dropout, training=self.training)
+        x = self.convs[-1](x, edge_index)
+        return x
+
+
 def train(model, data, train_idx, optimizer):
     model.train()
     optimizer.zero_grad()
     out = model(data.x, data.adj_t)
-    loss = F.nll_loss(out[train_idx], data.y[train_idx])
+    loss = F.cross_entropy(out[train_idx], data.y[train_idx])
     loss.backward()
     optimizer.step()
     return loss.item()
+
 
 def tes(model, data, split_idx, evaluator):
     with torch.no_grad():
@@ -93,11 +159,12 @@ def tes(model, data, split_idx, evaluator):
             node_id = split_idx[key]
             out = model(data.x, data.adj_t)
             y_pred = out.exp()  # (N, num_classes)
-            losses[key] = F.nll_loss(out[node_id], data.y[node_id]).item()
+            losses[key] = F.cross_entropy(out[node_id], data.y[node_id]).item()
             eval_results[key] = evaluator.eval(data.y[node_id], y_pred[node_id])[eval_metric]
     return eval_results, losses, y_pred
 
-def predict(data, node_id):
+
+def predict(data):
     """
     加载模型和模型预测
     :param node_id: int, 需要进行预测节点的下标
@@ -111,7 +178,7 @@ def predict(data, node_id):
 
 if __name__ == "__main__":
     args = parse_args()
-    device = torch.device(args.device if torch.cuda.is_available() else 'cpu')
+    device = torch.device(args.device)
 
     # 数据保存路径
     path = './datasets/632d74d4e2843a53167ee9a1-momodel/'
@@ -155,21 +222,15 @@ if __name__ == "__main__":
     print(data.x.shape)  # feature
     print(data.y.shape)  # label
 
-    # 模型参数
-    GIN_parameters = {
-        'num_layers': 2,
-        'hidden_channels': 64,
-        'dropout': 0.0,
-    }
-
     # 训练轮数
-    epochs = 200
+    epochs = 400
     # 日志记录周期
-    log_steps = 10
+    log_steps = 1
 
     # 初始化模型
-    model = GIN(in_channels=data.x.size(-1), hidden_channels=64, out_channels=nlabels, n_layers=2, dropout=0.5).to(device)
-    print(f'Model GIN initialized')
+    # model = GAT(in_channels=data.x.size(-1), hidden_channels=32, out_channels=nlabels, n_layers=2, n_heads=1, dropout=0.5).to(device)
+    model = GCN(in_channels=data.x.size(-1), hidden_channels=64, out_channels=nlabels, n_layers=2, dropout=0.5).to(device)
+    # model = GIN(in_channels=data.x.size(-1), hidden_channels=64, out_channels=nlabels, n_layers=2, mlp_layers=1, dropout=0.1).to(device)
 
     # 评估指标
     eval_metric = 'auc'
@@ -208,6 +269,6 @@ if __name__ == "__main__":
     # 预测并打印结果
     dic = {0: "正常用户", 1: "欺诈用户"}
     for node_idx in [0, 1]:
-        y_pred = predict(data, node_idx)
+        y_pred = predict(data)[node_idx]
         print(y_pred)
-        print(f'节点 {node_idx} 预测对应的标签为:{torch.argmax(y_pred)}, 为{dic[torch.argmax(y_pred).item()]}。')
+        print(f'节点 {node_idx} 预测对应的标签为:{torch.argmax(y_pred)}, 为{dic[torch.argmax(y_pred).item()]}')
