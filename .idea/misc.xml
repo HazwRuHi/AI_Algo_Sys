@@ -3,5 +3,5 @@
   <component name="Black">
     <option name="sdkName" value="GNN-with-Label-Noise-1" />
   </component>
-  <component name="ProjectRootManager" version="2" project-jdk-name="C:\ProgramData\anaconda3" project-jdk-type="Python SDK" />
+  <component name="ProjectRootManager" version="2" project-jdk-name="GNN-with-Label-Noise" project-jdk-type="Python SDK" />
 </project>

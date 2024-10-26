@@ -4,7 +4,7 @@ import torch.nn.functional as F
 import torch.nn as nn
 import torch_geometric.transforms as T
 from torch_geometric.data import Data
-from torch_geometric.nn import GINConv, GATConv, GCNConv
+from torch_geometric.nn import GINConv, GATConv, GCNConv, SAGEConv
 import numpy as np
 from utils import DGraphFin
 from utils.utils import prepare_folder
@@ -141,6 +141,42 @@ class GCN(nn.Module):
         return x
 
 
+class GraphSAGE(nn.Module):
+    def __init__(self, in_channels, hidden_channels, out_channels, n_layers=3, dropout=0.5, batchnorm=False):
+        super(GraphSAGE, self).__init__()
+        self.in_channels = in_channels
+        self.hidden_channels = hidden_channels
+        self.out_channels = out_channels
+        self.n_layers = n_layers
+        self.dropout = dropout
+        self.batchnorm = batchnorm
+
+        self.convs = nn.ModuleList()
+        self.bns = nn.ModuleList() if batchnorm else None
+
+        if n_layers == 1:
+            self.convs.append(SAGEConv(in_channels, out_channels))
+        else:
+            self.convs.append(SAGEConv(in_channels, hidden_channels))
+            if batchnorm:
+                self.bns.append(nn.BatchNorm1d(hidden_channels))
+            for _ in range(n_layers - 2):
+                self.convs.append(SAGEConv(hidden_channels, hidden_channels))
+                if batchnorm:
+                    self.bns.append(nn.BatchNorm1d(hidden_channels))
+            self.convs.append(SAGEConv(hidden_channels, out_channels))
+
+    def forward(self, x, edge_index):
+        for i, conv in enumerate(self.convs[:-1]):
+            x = conv(x, edge_index)
+            if self.batchnorm:
+                x = self.bns[i](x)
+            x = F.relu(x)
+            x = F.dropout(x, p=self.dropout, training=self.training)
+        x = self.convs[-1](x, edge_index)
+        return x
+
+
 def train(model, data, train_idx, optimizer):
     model.train()
     optimizer.zero_grad()
@@ -228,8 +264,9 @@ if __name__ == "__main__":
     log_steps = 1
 
     # 初始化模型
+    model = GraphSAGE(in_channels=data.x.size(-1), hidden_channels=64, out_channels=nlabels, n_layers=2, dropout=0.5, batchnorm=False).to(device)
     # model = GAT(in_channels=data.x.size(-1), hidden_channels=32, out_channels=nlabels, n_layers=2, n_heads=1, dropout=0.5).to(device)
-    model = GCN(in_channels=data.x.size(-1), hidden_channels=64, out_channels=nlabels, n_layers=2, dropout=0.5).to(device)
+    # model = GCN(in_channels=data.x.size(-1), hidden_channels=64, out_channels=nlabels, n_layers=2, dropout=0.5, batchnorm=False).to(device)
     # model = GIN(in_channels=data.x.size(-1), hidden_channels=64, out_channels=nlabels, n_layers=2, mlp_layers=1, dropout=0.1).to(device)
 
     # 评估指标
@@ -245,11 +282,20 @@ if __name__ == "__main__":
     # 训练和验证模型
     best_valid = 0
     min_valid_loss = 1e8
+    train_loss_record = []
+    train_eval_record = []
+    valid_loss_record = []
+    valid_eval_record = []
     for epoch in range(1, epochs + 1):
         loss = train(model, data, train_idx, optimizer)
         eval_results, losses, out = tes(model, data, split_idx, evaluator)
         train_eval, valid_eval = eval_results['train'], eval_results['valid']
         train_loss, valid_loss = losses['train'], losses['valid']
+
+        train_loss_record.append(train_loss)
+        train_eval_record.append(train_eval)
+        valid_loss_record.append(valid_loss)
+        valid_eval_record.append(valid_eval)
 
         # 保存验证集上表现最好的模型
         if valid_loss < min_valid_loss:
@@ -265,10 +311,54 @@ if __name__ == "__main__":
 
     # 载入验证集上表现最好的模型
     model.load_state_dict(torch.load(os.path.join(save_dir, 'model.pt')))
+    out = model(data.x, data.adj_t)
+    torch.save(out, os.path.join(save_dir, 'out.pt'))
 
     # 预测并打印结果
     dic = {0: "正常用户", 1: "欺诈用户"}
+    out = torch.load(os.path.join(save_dir, 'out.pt'))
     for node_idx in [0, 1]:
-        y_pred = predict(data)[node_idx]
+        y_pred = out[node_idx]
         print(y_pred)
         print(f'节点 {node_idx} 预测对应的标签为:{torch.argmax(y_pred)}, 为{dic[torch.argmax(y_pred).item()]}')
+
+    import matplotlib.pyplot as plt
+
+    # Plot training and validation loss and evaluation metrics separately
+    plt.figure(figsize=(12, 8))
+
+    # Plot training loss
+    plt.subplot(2, 2, 1)
+    plt.plot(train_loss_record, label='Train Loss')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.title('Training Loss')
+    plt.legend()
+
+    # Plot validation loss
+    plt.subplot(2, 2, 2)
+    plt.plot(valid_loss_record, label='Valid Loss')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.title('Validation Loss')
+    plt.legend()
+
+    # Plot training evaluation metric
+    plt.subplot(2, 2, 3)
+    plt.plot(train_eval_record, label='Train Eval')
+    plt.xlabel('Epochs')
+    plt.ylabel('Evaluation Metric')
+    plt.title('Training Evaluation Metric')
+    plt.legend()
+
+    # Plot validation evaluation metric
+    plt.subplot(2, 2, 4)
+    plt.plot(valid_eval_record, label='Valid Eval')
+    plt.xlabel('Epochs')
+    plt.ylabel('Evaluation Metric')
+    plt.title('Validation Evaluation Metric')
+    plt.legend()
+
+    plt.tight_layout()
+    plt.savefig(os.path.join('loss_eval_separate.png'), dpi=300)
+    plt.show()
