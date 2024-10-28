@@ -51,7 +51,7 @@ class MinDQNRobot(QRobot):
         self._build_network()
 
         """create the memory to store data"""
-        max_size = max(self.maze_size ** 2 * 3, 1e4)
+        max_size = max(self.maze_size ** 2 * 3, 1e5)
         self.memory = ReplayDataSet(max_size=max_size)
 
     def _build_network(self):
