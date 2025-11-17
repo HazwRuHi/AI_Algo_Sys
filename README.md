@@ -24,7 +24,7 @@ In addition, I also have some other projects that you might find interesting—p
 
 * NeurIPS 2024 [NoisyGL](https://github.com/eaglelab-zju/NoisyGL)
 * CIKM 2025 [TFR](https://github.com/eaglelab-zju/TFR)
-* IEEE TCEE [Masked Bayesian NMF](https://github.com/HazwRuHi/Masked_Bayesian_NMF)
+* IEEE Transactions on CSS (2024) [Masked Bayesian NMF](https://github.com/HazwRuHi/Masked_Bayesian_NMF)
 
 :star2: 如果你喜欢这些项目（也包括这个课程作业），可以给我的repo点一个star。:star2:
 
